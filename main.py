@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from aiogram import Bot, Dispatcher, F, types
-from aiogram import Router  # ← Добавьте эту строку
+from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -375,11 +375,11 @@ def expire_points():
 # ---------- Клавиатуры ----------
 def main_menu_kb() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="Топ"))
-    builder.add(KeyboardButton(text="Новые серверы"))
-    builder.add(KeyboardButton(text="Буст"))
-    builder.add(KeyboardButton(text="Поиск"))
-    builder.add(KeyboardButton(text="Добавить сервер"))
+    builder.add(KeyboardButton(text="🏆 Топ"))
+    builder.add(KeyboardButton(text="🆕 Новые серверы"))
+    builder.add(KeyboardButton(text="🚀 Буст"))
+    builder.add(KeyboardButton(text="🔍 Поиск"))
+    builder.add(KeyboardButton(text="➕ Добавить сервер"))
     builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
@@ -405,14 +405,14 @@ def server_details_kb(server_id: int, owner_established: bool, current_user_owne
     builder.row(InlineKeyboardButton(text="🔗 Сайт/Discord", url="https://example.com"))
     if not owner_established:
         builder.row(InlineKeyboardButton(text="Я владелец", callback_data=f"claim_owner:{server_id}"))
-    builder.row(InlineKeyboardButton(text="Назад к списку", callback_data="back_to_top"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_top"))
     return builder.as_markup()
 
 def boost_select_server_kb(servers: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for server in servers:
         builder.row(InlineKeyboardButton(text=server['name'], callback_data=f"boost_select:{server['id']}"))
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data="boost_cancel"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="boost_cancel"))
     return builder.as_markup()
 
 def boost_duration_kb(server_id: int) -> InlineKeyboardMarkup:
@@ -420,18 +420,18 @@ def boost_duration_kb(server_id: int) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="3 дня (0.5⭐/балл, мин. 2)", callback_data=f"boost_dur:{server_id}:3"))
     builder.row(InlineKeyboardButton(text="7 дней (1⭐/балл)", callback_data=f"boost_dur:{server_id}:7"))
     builder.row(InlineKeyboardButton(text="30 дней (3⭐/балл)", callback_data=f"boost_dur:{server_id}:30"))
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data="boost_cancel"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="boost_cancel"))
     return builder.as_markup()
 
 def admin_kb() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="Удалить сервер"))
-    builder.add(KeyboardButton(text="Статистика"))
-    builder.add(KeyboardButton(text="Рассылка"))
-    builder.add(KeyboardButton(text="Управление владельцами"))
-    builder.add(KeyboardButton(text="Экспорт БД"))
-    builder.add(KeyboardButton(text="Импорт БД"))
-    builder.add(KeyboardButton(text="В меню"))
+    builder.add(KeyboardButton(text="🗑 Удалить сервер"))
+    builder.add(KeyboardButton(text="📊 Статистика"))
+    builder.add(KeyboardButton(text="📨 Рассылка"))
+    builder.add(KeyboardButton(text="👑 Управление владельцами"))
+    builder.add(KeyboardButton(text="💾 Экспорт БД"))
+    builder.add(KeyboardButton(text="📥 Импорт БД"))
+    builder.add(KeyboardButton(text="🏠 В меню"))
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
@@ -464,31 +464,40 @@ user_router = Router()
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
+    
+    # Показываем приветствие с меню
+    await message.answer(
+        "👋 Здравствуйте! Добро пожаловать в бот RushX.\n\n"
+        "Используйте кнопки ниже для навигации:",
+        reply_markup=main_menu_kb()
+    )
+    
+    # Показываем топ серверов
     await show_top(message, page=1)
 
-@user_router.message(F.text == "Топ")
+@user_router.message(F.text == "🏆 Топ")
 async def show_top_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     await show_top(message, page=1)
 
-@user_router.message(F.text == "Новые серверы")
+@user_router.message(F.text == "🆕 Новые серверы")
 async def show_new_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     await show_new_servers(message, page=1)
 
-@user_router.message(F.text == "Добавить сервер")
+@user_router.message(F.text == "➕ Добавить сервер")
 async def add_server_start(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(AddServerStates.waiting_name)
     await message.answer("Назовите название своего сервера!")
 
-@user_router.message(F.text == "Поиск")
+@user_router.message(F.text == "🔍 Поиск")
 async def search_start(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(SearchStates.waiting_query)
     await message.answer("Какой сервер Вы хотите найти?")
 
-@user_router.message(F.text == "Буст")
+@user_router.message(F.text == "🚀 Буст")
 async def boost_start(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
@@ -507,7 +516,7 @@ async def show_top(message: types.Message, page: int):
     start = (page-1)*10
     end = start+10
     page_servers = servers[start:end]
-    text = "Здравствуйте! Добро пожаловать в бот RushX.\nВот список серверов:\n\n"
+    text = "🏆 Топ серверов:\n\n"
     for idx, server in enumerate(page_servers):
         pos = start + idx + 1
         balance = get_total_balance(server['id'])
@@ -524,7 +533,7 @@ async def show_new_servers(message: types.Message, page: int):
     start = (page-1)*10
     end = start+10
     page_servers = servers[start:end]
-    text = "Топ новых серверов:\n\n"
+    text = "🆕 Топ новых серверов:\n\n"
     for idx, server in enumerate(page_servers):
         pos = start + idx + 1
         text += f"#{pos} {server['name']} ({server['ip']})\nВерсия: {server['version']}\nДобавлен: {server['created_at']}\n\n"
@@ -587,17 +596,17 @@ async def confirm_add(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("Вы достигли лимита добавления серверов (5).")
         await state.clear()
         return
-    is_new_until = datetime.now() + timedelta(hours=24)
+    is_new_until = datetime.now()  # Буст доступен сразу
     server_id = add_server(data['name'], data['ip'], data['version'], user_id, is_new_until)
     await state.clear()
-    await callback.message.answer(f"Сервер {data['name']} успешно добавлен!\nОн появится в топе новых серверов и в общем списке.")
+    await callback.message.answer(f"✅ Сервер {data['name']} успешно добавлен!\nОн появится в топе новых серверов и в общем списке.")
     await show_top(callback.message, page=1)
     await callback.answer()
 
 @user_router.callback_query(F.data == "cancel_add", AddServerStates.confirm)
 async def cancel_add(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.answer("Добавление отменено.")
+    await callback.message.answer("❌ Добавление отменено.")
     await callback.answer()
 
 # Пагинация
@@ -628,7 +637,8 @@ async def server_details(callback: types.CallbackQuery, state: FSMContext):
     copies = get_copies_count_last_month(server_id)
     owner = server['owner_user_id']
     owner_text = "установлен" if owner else "не установлен"
-    text = f"Название: {server['name']}\n"
+    text = f"📊 Информация о сервере:\n\n"
+    text += f"Название: {server['name']}\n"
     text += f"IP: {server['ip']}\n"
     text += f"Версия: {server['version']}\n"
     text += f"Текущая позиция в топе: #{pos}\n"
@@ -657,7 +667,7 @@ async def like_server(callback: types.CallbackQuery):
         return
     log_action(server_id, user_id, "like")
     add_earned_points(server_id, user_id, "like", 5)
-    await callback.answer("+5 баллов за лайк!", show_alert=True)
+    await callback.answer("❤️ +5 баллов за лайк!", show_alert=True)
 
 @user_router.callback_query(F.data.startswith("copy:"))
 async def copy_ip(callback: types.CallbackQuery):
@@ -667,9 +677,9 @@ async def copy_ip(callback: types.CallbackQuery):
     if not has_action_in_last_days(server_id, user_id, "copy", 30):
         log_action(server_id, user_id, "copy")
         add_earned_points(server_id, user_id, "copy", 2)
-        await callback.answer(f"IP скопирован: {server['ip']}. +2 балла.", show_alert=True)
+        await callback.answer(f"📋 IP скопирован: {server['ip']}. +2 балла.", show_alert=True)
     else:
-        await callback.answer(f"IP скопирован: {server['ip']} (баллы не начислены, лимит)", show_alert=True)
+        await callback.answer(f"📋 IP скопирован: {server['ip']} (баллы не начислены, лимит)", show_alert=True)
 
 @user_router.callback_query(F.data.startswith("save:"))
 async def save_server(callback: types.CallbackQuery):
@@ -680,14 +690,14 @@ async def save_server(callback: types.CallbackQuery):
         return
     save_favorite(server_id, user_id)
     add_earned_points(server_id, user_id, "save", 1)
-    await callback.answer("Сервер сохранён! +1 балл.", show_alert=True)
+    await callback.answer("⭐ Сервер сохранён! +1 балл.", show_alert=True)
 
 @user_router.callback_query(F.data.startswith("claim_owner:"))
 async def claim_owner(callback: types.CallbackQuery):
     server_id = int(callback.data.split(":")[1])
     user_id = callback.from_user.id
     add_ownership_request(server_id, user_id)
-    await callback.answer("Заявка отправлена! Для подтверждения напишите @PRMManager.", show_alert=True)
+    await callback.answer("✅ Заявка отправлена! Для подтверждения напишите @PRMManager.", show_alert=True)
 
 @user_router.callback_query(F.data == "back_to_top")
 async def back_to_top(callback: types.CallbackQuery):
@@ -703,7 +713,7 @@ async def process_search(message: types.Message, state: FSMContext):
     if not servers:
         await message.answer("Сервер не найден.")
         return
-    text = f"Результаты поиска по '{query}':\n\n"
+    text = f"🔍 Результаты поиска по '{query}':\n\n"
     for idx, server in enumerate(servers, 1):
         text += f"#{idx} {server['name']} ({server['ip']})\nВерсия: {server['version']}\n\n"
     await message.answer(text, reply_markup=servers_list_kb(servers, 1, 1, mode="search"))
@@ -716,11 +726,7 @@ async def boost_server_selected(callback: types.CallbackQuery, state: FSMContext
     if not server:
         await callback.answer("Сервер не найден", show_alert=True)
         return
-    if server['is_new_until'] and datetime.now() < datetime.fromisoformat(server['is_new_until']):
-        hours_left = (datetime.fromisoformat(server['is_new_until']) - datetime.now()).total_seconds() / 3600
-        await callback.answer(f"Буст станет доступен через {int(hours_left)} ч.", show_alert=True)
-        await state.clear()
-        return
+    # Убрана проверка is_new_until - буст доступен сразу
     await state.update_data(server_id=server_id)
     await state.set_state(BoostStates.waiting_duration)
     await callback.message.answer("Выберите срок действия баллов:", reply_markup=boost_duration_kb(server_id))
@@ -739,7 +745,7 @@ async def boost_duration_selected(callback: types.CallbackQuery, state: FSMConte
 @user_router.callback_query(F.data == "boost_cancel", BoostStates.waiting_server)
 async def boost_cancel(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.answer("Буст отменён.")
+    await callback.message.answer("❌ Буст отменён.")
     await callback.answer()
 
 @user_router.message(BoostStates.waiting_points)
@@ -801,7 +807,7 @@ async def successful_payment(message: types.Message):
         total_stars = int(parts[4])
         user_id = message.from_user.id
         add_purchased_boost(server_id, user_id, points, duration, total_stars)
-        await message.answer(f"Оплата прошла успешно! Сервер получил {points} баллов на {duration} дней.")
+        await message.answer(f"✅ Оплата прошла успешно! Сервер получил {points} баллов на {duration} дней.")
         server = get_server_by_id(server_id)
         if server:
             notify_user_id = server['owner_user_id'] or server['creator_user_id']
@@ -825,9 +831,9 @@ async def admin_cmd(message: types.Message, state: FSMContext):
         await message.answer("Недостаточно прав.")
         return
     await state.clear()
-    await message.answer("Админ-панель", reply_markup=admin_kb())
+    await message.answer("👑 Админ-панель:", reply_markup=admin_kb())
 
-@admin_router.message(F.text == "Удалить сервер")
+@admin_router.message(F.text == "🗑 Удалить сервер")
 async def admin_delete_server(message: types.Message, state: FSMContext):
     servers = get_all_servers()
     if not servers:
@@ -852,10 +858,10 @@ async def admin_delete_server_choose(message: types.Message, state: FSMContext):
         return
     server = servers[idx]
     delete_server(server['id'])
-    await message.answer(f"Сервер {server['name']} удалён.")
+    await message.answer(f"✅ Сервер {server['name']} удалён.")
     await state.clear()
 
-@admin_router.message(F.text == "Статистика")
+@admin_router.message(F.text == "📊 Статистика")
 async def admin_stats(message: types.Message):
     conn = get_connection()
     cur = conn.cursor()
@@ -872,10 +878,16 @@ async def admin_stats(message: types.Message):
     cur.execute("SELECT COUNT(*) FROM actions_log WHERE action_type='copy'")
     copies = cur.fetchone()[0]
     conn.close()
-    text = f"Пользователей: {users_count}\nСерверов: {servers_count}\nАктивных покупных баллов: {purchased_points}\nАктивных заработанных баллов: {earned_points}\nВсего лайков: {likes}\nВсего копирований: {copies}"
+    text = f"📊 Статистика:\n\n"
+    text += f"Пользователей: {users_count}\n"
+    text += f"Серверов: {servers_count}\n"
+    text += f"Активных покупных баллов: {purchased_points}\n"
+    text += f"Активных заработанных баллов: {earned_points}\n"
+    text += f"Всего лайков: {likes}\n"
+    text += f"Всего копирований: {copies}"
     await message.answer(text)
 
-@admin_router.message(F.text == "Рассылка")
+@admin_router.message(F.text == "📨 Рассылка")
 async def admin_broadcast_start(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_broadcast)
     await message.answer("Введите текст рассылки:")
@@ -895,10 +907,10 @@ async def admin_broadcast_send(message: types.Message, state: FSMContext):
             count += 1
         except:
             pass
-    await message.answer(f"Рассылка отправлена {count} пользователям.")
+    await message.answer(f"✅ Рассылка отправлена {count} пользователям.")
     await state.clear()
 
-@admin_router.message(F.text == "Управление владельцами")
+@admin_router.message(F.text == "👑 Управление владельцами")
 async def admin_manage_owners(message: types.Message, state: FSMContext):
     servers = get_all_servers()
     if not servers:
@@ -939,10 +951,10 @@ async def admin_owner_set_user(message: types.Message, state: FSMContext):
         update_server_owner(server_id, None)
     else:
         update_server_owner(server_id, owner_id)
-    await message.answer("Владелец обновлён.")
+    await message.answer("✅ Владелец обновлён.")
     await state.clear()
 
-@admin_router.message(F.text == "Экспорт БД")
+@admin_router.message(F.text == "💾 Экспорт БД")
 async def admin_export_db(message: types.Message):
     data = {}
     conn = get_connection()
@@ -958,7 +970,7 @@ async def admin_export_db(message: types.Message):
     file.name = "database.json"
     await message.answer_document(BufferedInputFile(file.getvalue(), filename="database.json"))
 
-@admin_router.message(F.text == "Импорт БД")
+@admin_router.message(F.text == "📥 Импорт БД")
 async def admin_import_db_start(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_import_db)
     await message.answer("Отправьте JSON файл базы данных.")
@@ -984,10 +996,10 @@ async def admin_import_db_file(message: types.Message, state: FSMContext):
             cur.execute(sql, tuple(row.values()))
     conn.commit()
     conn.close()
-    await message.answer("База данных импортирована.")
+    await message.answer("✅ База данных импортирована.")
     await state.clear()
 
-@admin_router.message(F.text == "В меню")
+@admin_router.message(F.text == "🏠 В меню")
 async def back_to_user_menu(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы в главном меню", reply_markup=main_menu_kb())
