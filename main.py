@@ -24,7 +24,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ---------- Конфигурация ----------
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = "8625023834:AAH4tDi9UBHQe2Chp19tKvtyXcV719iNBRc"
 ADMIN_ID = 6689292068
 DB_PATH = "bot.db"
 
