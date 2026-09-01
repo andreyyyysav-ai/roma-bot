@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from aiogram import Bot, Dispatcher, F, types
-from aiogram import Router
+from aiogram import Router  # ← Добавьте эту строку
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -25,7 +25,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ---------- Конфигурация ----------
-BOT_TOKEN = "8625023834:AAH4tDi9UBHQe2Chp19tKvtyXcV719iNBRc"
+BOT_TOKEN = "YOUR_BOT_TOKEN"
 ADMIN_ID = 6689292068
 DB_PATH = "bot.db"
 
@@ -402,7 +402,7 @@ def server_details_kb(server_id: int, owner_established: bool, current_user_owne
     builder.row(InlineKeyboardButton(text="❤️ Лайк", callback_data=f"like:{server_id}"))
     builder.row(InlineKeyboardButton(text="📋 Скопировать IP", callback_data=f"copy:{server_id}"))
     builder.row(InlineKeyboardButton(text="⭐ Сохранить", callback_data=f"save:{server_id}"))
-    builder.row(InlineKeyboardButton(text="🔗 Сайт/Discord", url="https://example.com"))  # заглушка
+    builder.row(InlineKeyboardButton(text="🔗 Сайт/Discord", url="https://example.com"))
     if not owner_established:
         builder.row(InlineKeyboardButton(text="Я владелец", callback_data=f"claim_owner:{server_id}"))
     builder.row(InlineKeyboardButton(text="Назад к списку", callback_data="back_to_top"))
@@ -708,7 +708,7 @@ async def process_search(message: types.Message, state: FSMContext):
         text += f"#{idx} {server['name']} ({server['ip']})\nВерсия: {server['version']}\n\n"
     await message.answer(text, reply_markup=servers_list_kb(servers, 1, 1, mode="search"))
 
-# Буст: выбор сервера, срока, ввод баллов и оплата
+# Буст
 @user_router.callback_query(F.data.startswith("boost_select:"), BoostStates.waiting_server)
 async def boost_server_selected(callback: types.CallbackQuery, state: FSMContext):
     server_id = int(callback.data.split(":")[1])
