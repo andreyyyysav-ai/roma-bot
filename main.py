@@ -615,13 +615,11 @@ def get_user_audit(user_id: int) -> List[Dict[str, Any]]:
 def can_add_server(user_id: int) -> bool:
     conn = get_connection()
     cur = conn.cursor()
-    # Получаем время последнего добавления сервера пользователем
     cur.execute("SELECT MAX(created_at) FROM servers WHERE creator_user_id = ?", (user_id,))
     last_add = cur.fetchone()[0]
     conn.close()
     if last_add is None:
         return True
-    # Проверяем, прошло ли 10 минут
     last_add_time = datetime.fromisoformat(last_add)
     return (datetime.now() - last_add_time) >= timedelta(minutes=10)
 
@@ -684,10 +682,9 @@ def servers_list_kb(servers: list, page: int, total_pages: int, mode: str = "top
         pos = (page-1)*5 + idx + 1
         balance = get_total_balance(server['id'])
         likes = get_likes_count_last_month(server['id'])
-        # Формируем текст кнопки
-        button_text = f"#{pos} {server['name']} ({server['ip']}) | ⭐{balance} | 👍{likes}"
+        version = server['version']
+        button_text = f"#{pos} {server['name']} ⬆{version} ⭐{balance} 👍{likes}"
         builder.row(InlineKeyboardButton(text=button_text, callback_data=f"details:{server['id']}"))
-    # Пагинация
     pagination_buttons = []
     if page > 1:
         pagination_buttons.append(InlineKeyboardButton(text="← Назад", callback_data=f"page:{mode}:{page-1}"))
@@ -704,6 +701,8 @@ def server_details_kb(server_id: int, owner_established: bool, current_user_owne
     builder.row(InlineKeyboardButton(text="⭐ Сохранить", callback_data=f"save:{server_id}"))
     if website:
         builder.row(InlineKeyboardButton(text="🔗 Открыть сайт", callback_data=f"open_site:{server_id}"))
+    # Кнопка "Поделиться"
+    builder.row(InlineKeyboardButton(text="🔗 Поделиться", callback_data=f"share:{server_id}"))
     if not owner_established:
         builder.row(InlineKeyboardButton(text="Я владелец", callback_data=f"claim_owner:{server_id}"))
     if is_admin:
@@ -777,20 +776,63 @@ user_router = Router()
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
-    
     if is_user_banned(user_id):
         await message.answer("❌ Вы забанены в этом боте.")
         return
-    
     add_user(user_id, message.from_user.username, message.from_user.first_name)
+    
+    # Проверка deep link (если /start server_<id>)
+    args = message.text.split()
+    if len(args) > 1 and args[1].startswith("server_"):
+        try:
+            server_id = int(args[1].split("_")[1])
+            await show_server_by_id(message, server_id)
+            return
+        except:
+            pass
     
     await message.answer(
         "👋 Здравствуйте! Добро пожаловать в бот RushX.\n\n"
         "Используйте кнопки ниже для навигации:",
         reply_markup=main_menu_kb()
     )
-    
     await show_top(message, page=1)
+
+# Функция показа сервера по ID
+async def show_server_by_id(message: types.Message, server_id: int):
+    server = get_server_by_id(server_id)
+    if not server:
+        await message.answer("Сервер не найден.")
+        return
+    # Формируем карточку, как в server_details, но без callback
+    pos = get_top_servers().index(server) + 1 if server in get_top_servers() else 0
+    balance_purchased = get_active_purchased_points(server_id)
+    balance_earned = get_active_earned_points(server_id)
+    likes = get_likes_count_last_month(server_id)
+    saves = get_saves_count_total(server_id)
+    copies = get_copies_count_last_month(server_id)
+    owner = server['owner_user_id']
+    owner_text = get_user_display_name(owner) if owner else "не установлен"
+    website = server.get('website')
+    creator_name = get_user_display_name(server['creator_user_id'])
+    
+    text = f"📊 Информация о сервере:\n\n"
+    text += f"Название: {server['name']}\n"
+    text += f"IP: {server['ip']}\n"
+    text += f"Версия: {server['version']}\n"
+    if website:
+        text += f"Сайт: {website}\n"
+    text += f"Создатель: {creator_name}\n"
+    text += f"Текущая позиция в топе: #{pos}\n"
+    text += f"Общий баланс баллов: {balance_purchased + balance_earned}\n"
+    text += f"  - покупные: {balance_purchased}\n"
+    text += f"  - заработанные: {balance_earned}\n"
+    text += f"Лайков за месяц: {likes}\n"
+    text += f"Сохранений всего: {saves}\n"
+    text += f"Копирований IP за месяц: {copies}\n"
+    text += f"Владелец: {owner_text}\n"
+    
+    await message.answer(text, reply_markup=server_details_kb(server_id, owner is not None, owner == message.from_user.id, website, is_admin(message.from_user.id)))
 
 @user_router.message(F.text == "🏆 Топ")
 async def show_top_cmd(message: types.Message, state: FSMContext):
@@ -842,13 +884,13 @@ async def boost_start(message: types.Message, state: FSMContext):
 
 async def show_top(message: types.Message, page: int):
     servers = get_top_servers()
-    total_pages = max(1, (len(servers) + 4) // 5)  # 5 на страницу
+    total_pages = max(1, (len(servers) + 4) // 5)
     if page < 1 or page > total_pages:
         page = 1
     start = (page-1)*5
     end = start+5
     page_servers = servers[start:end]
-    text = "🏆 Топ серверов:\n\n"
+    text = "🏆 Топ серверов:\n(нажмите на сервер для подробной информации)\n\n"
     await message.answer(text, reply_markup=servers_list_kb(page_servers, page, total_pages, mode="top"))
 
 async def show_new_servers(message: types.Message, page: int):
@@ -859,9 +901,7 @@ async def show_new_servers(message: types.Message, page: int):
     start = (page-1)*5
     end = start+5
     page_servers = servers[start:end]
-    text = "🆕 Топ новых серверов:\n\n"
-    # Для новых серверов можно просто кнопки без доп. инфо или с минимальной
-    # Используем ту же функцию, но передадим mode="new"
+    text = "🆕 Топ новых серверов:\n(нажмите на сервер для подробной информации)\n\n"
     await message.answer(text, reply_markup=servers_list_kb(page_servers, page, total_pages, mode="new"))
 
 # Обработчики шагов добавления
@@ -1119,6 +1159,33 @@ async def open_site(callback: types.CallbackQuery):
     await callback.answer(url=server['website'])
     await callback.message.answer(f"🔗 Переход по ссылке: +3 балла!")
 
+# Обработчик "Поделиться"
+@user_router.callback_query(F.data.startswith("share:"))
+async def share_server(callback: types.CallbackQuery):
+    if is_user_banned(callback.from_user.id):
+        await callback.answer("❌ Вы забанены.", show_alert=True)
+        return
+    
+    server_id = int(callback.data.split(":")[1])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer("Сервер не найден", show_alert=True)
+        return
+    
+    bot_username = (await callback.bot.me()).username
+    if not bot_username:
+        await callback.answer("Не удалось сформировать ссылку.", show_alert=True)
+        return
+    
+    deep_link = f"https://t.me/{bot_username}?start=server_{server_id}"
+    
+    # Отправляем сообщение с ссылкой
+    await callback.message.answer(
+        f"🔗 Ссылка на сервер {server['name']}:\n{deep_link}",
+        disable_web_page_preview=True
+    )
+    await callback.answer()
+
 @user_router.callback_query(F.data.startswith("claim_owner:"))
 async def claim_owner(callback: types.CallbackQuery):
     if is_user_banned(callback.from_user.id):
@@ -1149,8 +1216,7 @@ async def process_search(message: types.Message, state: FSMContext):
     if not servers:
         await message.answer("Сервер не найден.")
         return
-    text = f"🔍 Результаты поиска по '{query}':\n\n"
-    # Показываем результаты тоже кнопками, используя servers_list_kb с mode="search"
+    text = f"🔍 Результаты поиска по '{query}':\n(нажмите на сервер для подробной информации)\n\n"
     await message.answer(text, reply_markup=servers_list_kb(servers, 1, max(1, (len(servers)+4)//5), mode="search"))
 
 # Буст
