@@ -1,3 +1,4 @@
+```python
 # bot.py
 import asyncio
 import logging
@@ -188,6 +189,26 @@ def add_audit_log(user_id: Optional[int], action: str, details: str = None):
     conn.commit()
     conn.close()
 
+# Функция получения имени пользователя
+def get_user_info(user_id: int) -> Dict[str, Any]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_display_name(user_id: int) -> str:
+    user = get_user_info(user_id)
+    if user:
+        if user['username']:
+            return f"@{user['username']}"
+        elif user['first_name']:
+            return user['first_name']
+        else:
+            return str(user_id)
+    return str(user_id)
+
 # Вспомогательные функции БД
 def add_user(user_id: int, username: str = None, first_name: str = None):
     conn = get_connection()
@@ -196,7 +217,7 @@ def add_user(user_id: int, username: str = None, first_name: str = None):
                 (user_id, username, first_name))
     conn.commit()
     conn.close()
-    add_audit_log(user_id, "user_registered", f"User {username or user_id} registered")
+    add_audit_log(user_id, "user_registered", f"Пользователь {get_user_display_name(user_id)} зарегистрировался")
 
 def is_user_banned(user_id: int) -> bool:
     conn = get_connection()
@@ -215,7 +236,7 @@ def ban_user(user_id: int, reason: str, banned_by: int):
     """, (reason, datetime.now(), banned_by, user_id))
     conn.commit()
     conn.close()
-    add_audit_log(banned_by, "user_banned", f"User {user_id} banned. Reason: {reason}")
+    add_audit_log(banned_by, "user_banned", f"Пользователь {get_user_display_name(user_id)} забанен. Причина: {reason}")
 
 def unban_user(user_id: int, unbanned_by: int):
     conn = get_connection()
@@ -226,15 +247,7 @@ def unban_user(user_id: int, unbanned_by: int):
     """, (user_id,))
     conn.commit()
     conn.close()
-    add_audit_log(unbanned_by, "user_unbanned", f"User {user_id} unbanned")
-
-def get_banned_users() -> List[Dict[str, Any]]:
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE is_banned = 1")
-    rows = cur.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    add_audit_log(unbanned_by, "user_unbanned", f"Пользователь {get_user_display_name(user_id)} разбанен")
 
 def add_server(name: str, ip: str, version: str, creator_user_id: int, is_new_until: datetime, website: str = None) -> int:
     conn = get_connection()
@@ -244,7 +257,7 @@ def add_server(name: str, ip: str, version: str, creator_user_id: int, is_new_un
     conn.commit()
     server_id = cur.lastrowid
     conn.close()
-    add_audit_log(creator_user_id, "server_added", f"Server {name} ({ip}) added by user {creator_user_id}")
+    add_audit_log(creator_user_id, "server_added", f"Сервер {name} ({ip}) добавлен пользователем {get_user_display_name(creator_user_id)}")
     return server_id
 
 def get_server_by_ip(ip: str) -> Optional[Dict[str, Any]]:
@@ -288,14 +301,6 @@ def get_all_servers(include_deleted: bool = False) -> List[Dict[str, Any]]:
     conn.close()
     return [dict(row) for row in rows]
 
-def search_servers(name_part: str) -> List[Dict[str, Any]]:
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM servers WHERE name LIKE ? AND is_deleted = 0", (f"%{name_part}%",))
-    rows = cur.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
 def update_server_owner(server_id: int, owner_user_id: Optional[int], processed_by: int = None):
     conn = get_connection()
     cur = conn.cursor()
@@ -303,16 +308,20 @@ def update_server_owner(server_id: int, owner_user_id: Optional[int], processed_
     conn.commit()
     conn.close()
     
-    # Обновляем заявки на владение
     if processed_by:
+        conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
             UPDATE ownership_requests SET status = 'approved', processed_at = ?, processed_by = ?
             WHERE server_id = ? AND status = 'pending'
         """, (datetime.now(), processed_by, server_id))
         conn.commit()
+        conn.close()
     
-    add_audit_log(processed_by, "owner_changed", f"Server {server_id} owner changed to {owner_user_id}")
+    if owner_user_id:
+        add_audit_log(processed_by, "owner_changed", f"Владелец сервера ID {server_id} изменён на {get_user_display_name(owner_user_id)}")
+    else:
+        add_audit_log(processed_by, "owner_removed", f"Владелец сервера ID {server_id} снят")
 
 def delete_server(server_id: int, deleted_by: int):
     conn = get_connection()
@@ -325,13 +334,14 @@ def delete_server(server_id: int, deleted_by: int):
     conn.close()
     
     server = get_server_by_id(server_id, include_deleted=True)
-    add_audit_log(deleted_by, "server_deleted", f"Server {server['name']} ({server['ip']}) deleted by user {deleted_by}")
+    if server:
+        add_audit_log(deleted_by, "server_deleted", f"Сервер {server['name']} ({server['ip']}) удалён администратором {get_user_display_name(deleted_by)}")
 
 def delete_servers_batch(server_ids: List[int], deleted_by: int):
     for server_id in server_ids:
         delete_server(server_id, deleted_by)
 
-# Функции для работы с баллами (без изменений)
+# Функции для работы с баллами
 def add_purchased_boost(server_id: int, user_id: int, points: int, duration_days: int, cost_stars: int):
     expires_at = datetime.now() + timedelta(days=duration_days)
     conn = get_connection()
@@ -340,7 +350,7 @@ def add_purchased_boost(server_id: int, user_id: int, points: int, duration_days
                 (server_id, user_id, points, duration_days, cost_stars, expires_at))
     conn.commit()
     conn.close()
-    add_audit_log(user_id, "boost_purchased", f"Server {server_id} boosted with {points} points for {duration_days} days")
+    add_audit_log(user_id, "boost_purchased", f"Сервер ID {server_id} получил буст {points} баллов на {duration_days} дней от {get_user_display_name(user_id)}")
 
 def add_earned_points(server_id: int, user_id: int, action_type: str, points: int):
     expires_at = datetime.now() + timedelta(days=30)
@@ -350,7 +360,15 @@ def add_earned_points(server_id: int, user_id: int, action_type: str, points: in
                 (server_id, user_id, action_type, points, expires_at))
     conn.commit()
     conn.close()
-    add_audit_log(user_id, "points_earned", f"Server {server_id} earned {points} points via {action_type}")
+    
+    action_names = {
+        'like': 'лайк',
+        'copy': 'копирование IP',
+        'save': 'сохранение',
+        'site_visit': 'переход по ссылке'
+    }
+    action_name = action_names.get(action_type, action_type)
+    add_audit_log(user_id, "points_earned", f"Сервер ID {server_id} получил {points} баллов за {action_name} от {get_user_display_name(user_id)}")
 
 def get_active_purchased_points(server_id: int) -> int:
     conn = get_connection()
@@ -381,7 +399,6 @@ def log_action(server_id: int, user_id: int, action_type: str):
                 (server_id, user_id, action_type))
     conn.commit()
     conn.close()
-    add_audit_log(user_id, f"action_{action_type}", f"Server {server_id} received {action_type}")
 
 def has_action_in_last_days(server_id: int, user_id: int, action_type: str, days: int = 30) -> bool:
     conn = get_connection()
@@ -407,7 +424,7 @@ def save_favorite(server_id: int, user_id: int):
     cur.execute("INSERT OR IGNORE INTO favorites (server_id, user_id) VALUES (?, ?)", (server_id, user_id))
     conn.commit()
     conn.close()
-    add_audit_log(user_id, "server_saved", f"Server {server_id} saved by user {user_id}")
+    add_audit_log(user_id, "server_saved", f"Сервер ID {server_id} сохранён пользователем {get_user_display_name(user_id)}")
 
 def get_likes_count_last_month(server_id: int) -> int:
     conn = get_connection()
@@ -444,7 +461,7 @@ def add_ownership_request(server_id: int, user_id: int):
     cur.execute("INSERT INTO ownership_requests (server_id, user_id) VALUES (?, ?)", (server_id, user_id))
     conn.commit()
     conn.close()
-    add_audit_log(user_id, "ownership_requested", f"User {user_id} requested ownership of server {server_id}")
+    add_audit_log(user_id, "ownership_requested", f"Пользователь {get_user_display_name(user_id)} подал заявку на владение сервером ID {server_id}")
 
 def get_pending_ownership_requests() -> List[Dict[str, Any]]:
     conn = get_connection()
@@ -454,33 +471,133 @@ def get_pending_ownership_requests() -> List[Dict[str, Any]]:
     conn.close()
     return [dict(row) for row in rows]
 
-def set_ownership_request_status(request_id: int, status: str, processed_by: int):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE ownership_requests SET status = ?, processed_at = ?, processed_by = ?
-        WHERE id = ?
-    """, (status, datetime.now(), processed_by, request_id))
-    conn.commit()
-    conn.close()
-    add_audit_log(processed_by, f"ownership_request_{status}", f"Ownership request {request_id} {status}")
-
-# Функция для получения истории сервера
-def get_server_history(server_id: int) -> List[Dict[str, Any]]:
+# Функция получения полной истории сервера
+def get_server_full_history(server_id: int) -> str:
+    server = get_server_by_id(server_id, include_deleted=True)
+    if not server:
+        return "Сервер не найден"
+    
+    history_text = f"📜 ИСТОРИЯ СЕРВЕРА: {server['name']}\n"
+    history_text += f"IP: {server['ip']}\n"
+    history_text += f"Версия: {server['version']}\n"
+    history_text += f"{'='*40}\n\n"
+    
+    creator = get_user_info(server['creator_user_id'])
+    creator_name = get_user_display_name(server['creator_user_id'])
+    history_text += f"👤 СОЗДАТЕЛЬ:\n  {creator_name}\n"
+    if creator and creator['username']:
+        history_text += f"  ID: {creator['user_id']}\n"
+    history_text += f"  Дата: {server['created_at']}\n\n"
+    
+    if server['owner_user_id']:
+        owner_name = get_user_display_name(server['owner_user_id'])
+        history_text += f"👑 ВЛАДЕЛЕЦ:\n  {owner_name}\n  ID: {server['owner_user_id']}\n\n"
+    else:
+        history_text += f"👑 ВЛАДЕЛЕЦ: Не установлен\n\n"
+    
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
         SELECT al.*, u.username, u.first_name
-        FROM audit_log al
-        LEFT JOIN users u ON al.user_id = u.user_id
-        WHERE al.details LIKE ?
-        ORDER BY al.created_at DESC
-    """, (f"%Server {server_id}%",))
-    rows = cur.fetchall()
+        FROM actions_log al
+        JOIN users u ON al.user_id = u.user_id
+        WHERE al.server_id = ? AND al.action_type = 'like'
+        ORDER BY al.created_at
+    """, (server_id,))
+    likes = cur.fetchall()
+    if likes:
+        history_text += f"❤️ ЛАЙКИ ({len(likes)}):\n"
+        for like in likes:
+            user_name = f"@{like['username']}" if like['username'] else like['first_name']
+            history_text += f"  • {user_name} - {like['created_at']}\n"
+        history_text += f"\n"
+    
+    cur.execute("""
+        SELECT al.*, u.username, u.first_name
+        FROM actions_log al
+        JOIN users u ON al.user_id = u.user_id
+        WHERE al.server_id = ? AND al.action_type = 'copy'
+        ORDER BY al.created_at
+    """, (server_id,))
+    copies = cur.fetchall()
+    if copies:
+        history_text += f"📋 КОПИРОВАНИЯ IP ({len(copies)}):\n"
+        for copy in copies:
+            user_name = f"@{copy['username']}" if copy['username'] else copy['first_name']
+            history_text += f"  • {user_name} - {copy['created_at']}\n"
+        history_text += f"\n"
+    
+    cur.execute("""
+        SELECT f.*, u.username, u.first_name
+        FROM favorites f
+        JOIN users u ON f.user_id = u.user_id
+        WHERE f.server_id = ?
+        ORDER BY f.created_at
+    """, (server_id,))
+    saves = cur.fetchall()
+    if saves:
+        history_text += f"⭐ СОХРАНЕНИЯ ({len(saves)}):\n"
+        for save in saves:
+            user_name = f"@{save['username']}" if save['username'] else save['first_name']
+            history_text += f"  • {user_name} - {save['created_at']}\n"
+        history_text += f"\n"
+    
+    cur.execute("""
+        SELECT o.*, u.username, u.first_name
+        FROM ownership_requests o
+        JOIN users u ON o.user_id = u.user_id
+        WHERE o.server_id = ?
+        ORDER BY o.created_at
+    """, (server_id,))
+    ownership_requests = cur.fetchall()
+    if ownership_requests:
+        history_text += f"📝 ЗАЯВКИ НА ВЛАДЕНИЕ ({len(ownership_requests)}):\n"
+        for req in ownership_requests:
+            user_name = f"@{req['username']}" if req['username'] else req['first_name']
+            status = req['status']
+            history_text += f"  • {user_name} - {status} - {req['created_at']}\n"
+        history_text += f"\n"
+    
+    cur.execute("""
+        SELECT pb.*, u.username, u.first_name
+        FROM purchased_boost pb
+        JOIN users u ON pb.user_id = u.user_id
+        WHERE pb.server_id = ?
+        ORDER BY pb.purchased_at
+    """, (server_id,))
+    boosts = cur.fetchall()
+    if boosts:
+        history_text += f"🚀 БУСТЫ ({len(boosts)}):\n"
+        for boost in boosts:
+            user_name = f"@{boost['username']}" if boost['username'] else boost['first_name']
+            history_text += f"  • {user_name}: {boost['points']} баллов на {boost['duration_days']} дней - {boost['purchased_at']}\n"
+        history_text += f"\n"
+    
+    cur.execute("""
+        SELECT ep.*, u.username, u.first_name
+        FROM earned_points ep
+        JOIN users u ON ep.user_id = u.user_id
+        WHERE ep.server_id = ?
+        ORDER BY ep.created_at
+    """, (server_id,))
+    earned = cur.fetchall()
+    if earned:
+        history_text += f"💰 ЗАРАБОТАННЫЕ БАЛЛЫ ({len(earned)}):\n"
+        for point in earned:
+            user_name = f"@{point['username']}" if point['username'] else point['first_name']
+            action_names = {
+                'like': 'лайк',
+                'copy': 'копирование IP',
+                'save': 'сохранение',
+                'site_visit': 'переход по ссылке'
+            }
+            action_name = action_names.get(point['action_type'], point['action_type'])
+            history_text += f"  • {user_name}: +{point['points']} за {action_name} - {point['created_at']}\n"
+    
     conn.close()
-    return [dict(row) for row in rows]
+    return history_text
 
-# Функция для получения аудита пользователя
+# Функция получения аудита пользователя
 def get_user_audit(user_id: int) -> List[Dict[str, Any]]:
     conn = get_connection()
     cur = conn.cursor()
@@ -494,6 +611,20 @@ def get_user_audit(user_id: int) -> List[Dict[str, Any]]:
     rows = cur.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+# Функция проверки антиспама
+def can_add_server(user_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    # Получаем время последнего добавления сервера пользователем
+    cur.execute("SELECT MAX(created_at) FROM servers WHERE creator_user_id = ?", (user_id,))
+    last_add = cur.fetchone()[0]
+    conn.close()
+    if last_add is None:
+        return True
+    # Проверяем, прошло ли 10 минут
+    last_add_time = datetime.fromisoformat(last_add)
+    return (datetime.now() - last_add_time) >= timedelta(minutes=10)
 
 # Сортировка серверов для топа
 def get_top_servers() -> List[Dict[str, Any]]:
@@ -551,8 +682,13 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
 def servers_list_kb(servers: list, page: int, total_pages: int, mode: str = "top") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for idx, server in enumerate(servers):
-        pos = (page-1)*10 + idx + 1
-        builder.row(InlineKeyboardButton(text=f"#{pos} {server['name']}", callback_data=f"details:{server['id']}"))
+        pos = (page-1)*5 + idx + 1
+        balance = get_total_balance(server['id'])
+        likes = get_likes_count_last_month(server['id'])
+        # Формируем текст кнопки
+        button_text = f"#{pos} {server['name']} ({server['ip']}) | ⭐{balance} | 👍{likes}"
+        builder.row(InlineKeyboardButton(text=button_text, callback_data=f"details:{server['id']}"))
+    # Пагинация
     pagination_buttons = []
     if page > 1:
         pagination_buttons.append(InlineKeyboardButton(text="← Назад", callback_data=f"page:{mode}:{page-1}"))
@@ -572,8 +708,8 @@ def server_details_kb(server_id: int, owner_established: bool, current_user_owne
     if not owner_established:
         builder.row(InlineKeyboardButton(text="Я владелец", callback_data=f"claim_owner:{server_id}"))
     if is_admin:
-        builder.row(InlineKeyboardButton(text="📜 История", callback_data=f"server_history:{server_id}"))
-        builder.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin_delete_server:{server_id}"))
+        builder.row(InlineKeyboardButton(text="📜 Полная история", callback_data=f"full_history:{server_id}"))
+        builder.row(InlineKeyboardButton(text="🗑 Удалить сервер", callback_data=f"admin_delete_server:{server_id}"))
     builder.row(InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_top"))
     return builder.as_markup()
 
@@ -594,7 +730,7 @@ def boost_duration_kb(server_id: int) -> InlineKeyboardMarkup:
 
 def admin_kb() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="🗑 Удалить сервер"))
+    builder.add(KeyboardButton(text="🗑 Удалить серверы"))
     builder.add(KeyboardButton(text="📊 Статистика"))
     builder.add(KeyboardButton(text="📨 Рассылка"))
     builder.add(KeyboardButton(text="👑 Управление владельцами"))
@@ -643,7 +779,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     
-    # Проверка бана
     if is_user_banned(user_id):
         await message.answer("❌ Вы забанены в этом боте.")
         return
@@ -708,35 +843,26 @@ async def boost_start(message: types.Message, state: FSMContext):
 
 async def show_top(message: types.Message, page: int):
     servers = get_top_servers()
-    total_pages = max(1, (len(servers) + 9) // 10)
+    total_pages = max(1, (len(servers) + 4) // 5)  # 5 на страницу
     if page < 1 or page > total_pages:
         page = 1
-    start = (page-1)*10
-    end = start+10
+    start = (page-1)*5
+    end = start+5
     page_servers = servers[start:end]
     text = "🏆 Топ серверов:\n\n"
-    for idx, server in enumerate(page_servers):
-        pos = start + idx + 1
-        balance = get_total_balance(server['id'])
-        text += f"#{pos} {server['name']} ({server['ip']})\nВерсия: {server['version']}\nБаллы: {balance}\n\n"
-    if not page_servers:
-        text += "Серверов пока нет."
     await message.answer(text, reply_markup=servers_list_kb(page_servers, page, total_pages, mode="top"))
 
 async def show_new_servers(message: types.Message, page: int):
     servers = get_new_servers()
-    total_pages = max(1, (len(servers) + 9) // 10)
+    total_pages = max(1, (len(servers) + 4) // 5)
     if page < 1 or page > total_pages:
         page = 1
-    start = (page-1)*10
-    end = start+10
+    start = (page-1)*5
+    end = start+5
     page_servers = servers[start:end]
     text = "🆕 Топ новых серверов:\n\n"
-    for idx, server in enumerate(page_servers):
-        pos = start + idx + 1
-        text += f"#{pos} {server['name']} ({server['ip']})\nВерсия: {server['version']}\nДобавлен: {server['created_at']}\n\n"
-    if not page_servers:
-        text += "Серверов пока нет."
+    # Для новых серверов можно просто кнопки без доп. инфо или с минимальной
+    # Используем ту же функцию, но передадим mode="new"
     await message.answer(text, reply_markup=servers_list_kb(page_servers, page, total_pages, mode="new"))
 
 # Обработчики шагов добавления
@@ -772,7 +898,11 @@ async def process_ip(message: types.Message, state: FSMContext):
         return
     existing = get_server_by_ip(ip)
     if existing:
-        await message.answer("Сервер с таким IP уже существует.")
+        await message.answer(
+            "Этот IP уже занят. Не волнуйтесь, если вы реальный владелец этого сервера, "
+            "напишите нам в поддержку @PRMManager."
+        )
+        await state.clear()
         return
     await state.update_data(ip=ip)
     await state.set_state(AddServerStates.waiting_version)
@@ -831,6 +961,13 @@ async def confirm_add(callback: types.CallbackQuery, state: FSMContext):
     
     data = await state.get_data()
     user_id = callback.from_user.id
+    
+    # Проверка антиспама: можно добавлять не чаще раза в 10 минут
+    if not can_add_server(user_id):
+        await callback.answer("Слишком часто добавляете серверы. Подождите 10 минут.", show_alert=True)
+        await state.clear()
+        return
+    
     user_servers = get_servers_by_creator(user_id)
     if len(user_servers) >= 5:
         await callback.message.answer("Вы достигли лимита добавления серверов (5).")
@@ -858,7 +995,7 @@ async def handle_pagination(callback: types.CallbackQuery, state: FSMContext):
         return
     
     parts = callback.data.split(":")
-    mode = parts[1]
+    mode = parts[1] от
     page = int(parts[2])
     if mode == "top":
         await show_top(callback.message, page)
@@ -886,8 +1023,9 @@ async def server_details(callback: types.CallbackQuery, state: FSMContext):
     saves = get_saves_count_total(server_id)
     copies = get_copies_count_last_month(server_id)
     owner = server['owner_user_id']
-    owner_text = "установлен" if owner else "не установлен"
+    owner_text = get_user_display_name(owner) if owner else "не установлен"
     website = server.get('website')
+    creator_name = get_user_display_name(server['creator_user_id'])
     
     text = f"📊 Информация о сервере:\n\n"
     text += f"Название: {server['name']}\n"
@@ -895,6 +1033,7 @@ async def server_details(callback: types.CallbackQuery, state: FSMContext):
     text += f"Версия: {server['version']}\n"
     if website:
         text += f"Сайт: {website}\n"
+    text += f"Создатель: {creator_name}\n"
     text += f"Текущая позиция в топе: #{pos}\n"
     text += f"Общий баланс баллов: {balance_purchased + balance_earned}\n"
     text += f"  - покупные: {balance_purchased}\n"
@@ -1012,9 +1151,8 @@ async def process_search(message: types.Message, state: FSMContext):
         await message.answer("Сервер не найден.")
         return
     text = f"🔍 Результаты поиска по '{query}':\n\n"
-    for idx, server in enumerate(servers, 1):
-        text += f"#{idx} {server['name']} ({server['ip']})\nВерсия: {server['version']}\n\n"
-    await message.answer(text, reply_markup=servers_list_kb(servers, 1, 1, mode="search"))
+    # Показываем результаты тоже кнопками, используя servers_list_kb с mode="search"
+    await message.answer(text, reply_markup=servers_list_kb(servers, 1, max(1, (len(servers)+4)//5), mode="search"))
 
 # Буст
 @user_router.callback_query(F.data.startswith("boost_select:"), BoostStates.waiting_server)
@@ -1147,7 +1285,7 @@ async def admin_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("👑 Админ-панель:", reply_markup=admin_kb())
 
-@admin_router.message(F.text == "🗑 Удалить сервер")
+@admin_router.message(F.text == "🗑 Удалить серверы")
 async def admin_delete_servers(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         await message.answer("Недостаточно прав.")
@@ -1160,7 +1298,8 @@ async def admin_delete_servers(message: types.Message, state: FSMContext):
     
     text = "Выберите серверы для удаления (можно несколько через запятую):\n\n"
     for idx, server in enumerate(servers, 1):
-        text += f"{idx}. {server['name']} ({server['ip']}) - ID: {server['id']}\n"
+        creator_name = get_user_display_name(server['creator_user_id'])
+        text += f"{idx}. {server['name']} ({server['ip']}) - Создатель: {creator_name} - ID: {server['id']}\n"
     
     text += "\nВведите номера через запятую (например: 1,3,5) или ID серверов (например: 10,15,20)"
     await state.set_state(AdminStates.waiting_delete_servers)
@@ -1176,21 +1315,16 @@ async def admin_delete_servers_choose(message: types.Message, state: FSMContext)
     input_text = message.text.strip()
     servers = get_all_servers()
     
-    # Пробуем распарсить как номера или ID
     try:
-        # Разделяем по запятой
         parts = [p.strip() for p in input_text.split(',')]
         ids_to_delete = []
         
         for part in parts:
             if part.isdigit():
                 num = int(part)
-                # Проверяем, это номер в списке или ID сервера
                 if 1 <= num <= len(servers):
-                    # Это номер в списке
                     ids_to_delete.append(servers[num-1]['id'])
                 else:
-                    # Это ID сервера
                     ids_to_delete.append(num)
         
         if not ids_to_delete:
@@ -1198,7 +1332,6 @@ async def admin_delete_servers_choose(message: types.Message, state: FSMContext)
             await state.clear()
             return
         
-        # Удаляем серверы
         deleted_count = 0
         for server_id in ids_to_delete:
             if get_server_by_id(server_id):
@@ -1207,8 +1340,6 @@ async def admin_delete_servers_choose(message: types.Message, state: FSMContext)
         
         await message.answer(f"✅ Удалено серверов: {deleted_count}")
         await state.clear()
-        
-        # Показываем обновлённый список
         await show_top(message, page=1)
     except Exception as e:
         await message.answer(f"Ошибка: {e}")
@@ -1240,15 +1371,14 @@ async def admin_ban_user_reason(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = data['ban_user_id']
     
-    # Баним пользователя
     ban_user(user_id, reason, message.from_user.id)
     
-    # Удаляем все серверы пользователя
     user_servers = get_servers_by_creator(user_id)
     for server in user_servers:
         delete_server(server['id'], message.from_user.id)
     
-    await message.answer(f"✅ Пользователь {user_id} забанен.\nПричина: {reason}\nУдалено серверов: {len(user_servers)}")
+    user_name = get_user_display_name(user_id)
+    await message.answer(f"✅ Пользователь {user_name} забанен.\nПричина: {reason}\nУдалено серверов: {len(user_servers)}")
     await state.clear()
 
 @admin_router.message(F.text == "✅ Разбан пользователя")
@@ -1268,7 +1398,8 @@ async def admin_unban_user_id(message: types.Message, state: FSMContext):
         return
     
     unban_user(user_id, message.from_user.id)
-    await message.answer(f"✅ Пользователь {user_id} разбанен.")
+    user_name = get_user_display_name(user_id)
+    await message.answer(f"✅ Пользователь {user_name} разбанен.")
     await state.clear()
 
 @admin_router.message(F.text == "📜 Аудит лог")
@@ -1276,53 +1407,25 @@ async def admin_audit_log(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         await message.answer("Недостаточно прав.")
         return
-    await state.set_state(AdminStates.waiting_audit_user)
-    await message.answer("Введите user_id для просмотра истории (или 'все' для общего лога):")
+    await state.set_state(AdminStates.waiting_history_server)
+    await message.answer("Введите ID сервера для просмотра полной истории:")
 
-@admin_router.message(AdminStates.waiting_audit_user)
-async def admin_audit_user(message: types.Message, state: FSMContext):
-    input_text = message.text.strip()
+@admin_router.message(AdminStates.waiting_history_server)
+async def admin_history_server(message: types.Message, state: FSMContext):
+    try:
+        server_id = int(message.text)
+    except:
+        await message.answer("Введите число.")
+        return
     
-    if input_text.lower() == 'все':
-        # Показываем последние 50 записей аудита
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT al.*, u.username, u.first_name
-            FROM audit_log al
-            LEFT JOIN users u ON al.user_id = u.user_id
-            ORDER BY al.created_at DESC
-            LIMIT 50
-        """)
-        rows = cur.fetchall()
-        conn.close()
-        
-        text = "📜 Последние 50 записей аудита:\n\n"
-        for row in rows:
-            user_info = f"@{row['username']}" if row['username'] else row['user_id']
-            text += f"[{row['created_at']}] {user_info}: {row['action']} - {row['details']}\n"
-    else:
-        try:
-            user_id = int(input_text)
-            audit = get_user_audit(user_id)
-            
-            text = f"📜 История пользователя {user_id}:\n\n"
-            for entry in audit:
-                text += f"[{entry['created_at']}] {entry['action']} - {entry['details']}\n"
-            
-            if not audit:
-                text += "Нет записей."
-        except:
-            await message.answer("Неверный формат.")
-            return
+    history = get_server_full_history(server_id)
     
-    # Отправляем частями, если длинное
-    if len(text) > 4000:
-        parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
+    if len(history) > 4000:
+        parts = [history[i:i+4000] for i in range(0, len(history), 4000)]
         for part in parts:
             await message.answer(part)
     else:
-        await message.answer(text)
+        await message.answer(history)
     
     await state.clear()
 
@@ -1405,7 +1508,8 @@ async def admin_manage_owners(message: types.Message, state: FSMContext):
     
     text = "Выберите сервер для управления владельцем (номер):\n"
     for idx, server in enumerate(servers, 1):
-        text += f"{idx}. {server['name']} (owner: {server['owner_user_id'] or 'нет'})\n"
+        creator_name = get_user_display_name(server['creator_user_id'])
+        text += f"{idx}. {server['name']} (owner: {get_user_display_name(server['owner_user_id']) if server['owner_user_id'] else 'нет'}) - Создатель: {creator_name}\n"
     
     await state.set_state(AdminStates.waiting_owner_select_server)
     await message.answer(text)
@@ -1513,29 +1617,22 @@ async def back_to_user_menu(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы в главном меню", reply_markup=main_menu_kb())
 
-# Обработчик истории сервера
-@user_router.callback_query(F.data.startswith("server_history:"))
-async def server_history_callback(callback: types.CallbackQuery):
+# Обработчик полной истории сервера
+@user_router.callback_query(F.data.startswith("full_history:"))
+async def full_history_callback(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Недостаточно прав.", show_alert=True)
         return
     
     server_id = int(callback.data.split(":")[1])
-    history = get_server_history(server_id)
+    history = get_server_full_history(server_id)
     
-    text = f"📜 История сервера ID {server_id}:\n\n"
-    for entry in history:
-        text += f"[{entry['created_at']}] {entry['action']} - {entry['details']}\n"
-    
-    if not history:
-        text += "Нет записей."
-    
-    if len(text) > 4000:
-        parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
+    if len(history) > 4000:
+        parts = [history[i:i+4000] for i in range(0, len(history), 4000)]
         for part in parts:
             await callback.message.answer(part)
     else:
-        await callback.message.answer(text)
+        await callback.message.answer(history)
     
     await callback.answer()
 
@@ -1595,3 +1692,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
