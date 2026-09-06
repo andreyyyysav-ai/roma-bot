@@ -994,7 +994,7 @@ async def handle_pagination(callback: types.CallbackQuery, state: FSMContext):
         return
     
     parts = callback.data.split(":")
-    mode = parts[1] от
+    mode = parts[1]
     page = int(parts[2])
     if mode == "top":
         await show_top(callback.message, page)
